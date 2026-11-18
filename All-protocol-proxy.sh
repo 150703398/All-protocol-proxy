@@ -12,7 +12,7 @@ ACTION="${1:-install}"
 # 域名永久不变；填 false 则保留原来的随机临时隧道。
 # ----------------------------------------------------------------------------
 # 开关: true=使用固定命名隧道; false=使用随机 trycloudflare 临时隧道
-USE_NAMED_TUNNEL="false"
+USE_NAMED_TUNNEL="trun"
 
 # 你的 Cloudflare Tunnel Token
 # 获取: Cloudflare Zero Trust 控制台 -> Networks -> Tunnels -> Create a tunnel -> Cloudflared
