@@ -2,5 +2,13 @@
 
 
 
+
+
 执行命令：
+
 bash All-protocol-proxy.sh --tunnel-token "eyJ..." --tunnel-hostname "argo.example.com" --tunnel-local-port "40000"
+
+
+快捷卸载命令: 
+
+bash /opt/All-protocol-proxy/All-protocol-proxy.sh uninstall
