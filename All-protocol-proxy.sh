@@ -842,7 +842,7 @@ EOF
         fi
 
         show_progress 74 "正在建立固定命名隧道: ${TUNNEL_HOSTNAME} -> http://localhost:${TUNNEL_LOCAL_PORT} ..."
-        nohup /opt/All-protocol-proxy/cloudflared-linux tunnel run --token "$TUNNEL_TOKEN" --no-autoupdate --edge-ip-version "$ips" --protocol http2 > /opt/All-protocol-proxy/argo_named.log 2>&1 &
+        nohup /opt/All-protocol-proxy/cloudflared-linux --no-autoupdate tunnel run --token "$TUNNEL_TOKEN" > /opt/All-protocol-proxy/argo_named.log 2>&1 &
         local cf_pid=$!
         echo "$cf_pid" > /opt/All-protocol-proxy/cf_main.pid
 
@@ -889,7 +889,7 @@ EOF
     else
         # ===== 随机 trycloudflare 临时隧道 (原逻辑) =====
         show_progress 74 "正在申请 Argo 临时隧道 (VLESS /${urlpath_vless} + Trojan /${urlpath_trojan})..."
-        /opt/All-protocol-proxy/cloudflared-linux tunnel --url "http://127.0.0.1:${port_argo_entry}" --no-autoupdate --edge-ip-version "$ips" --protocol http2 > /opt/All-protocol-proxy/argo_main.log 2>&1 &
+        /opt/All-protocol-proxy/cloudflared-linux --no-autoupdate tunnel --url "http://127.0.0.1:${port_argo_entry}" --protocol http2 > /opt/All-protocol-proxy/argo_main.log 2>&1 &
         echo $! > /opt/All-protocol-proxy/cf_main.pid
 
         local wait_sec=0
@@ -915,7 +915,7 @@ EOF
                 safe_kill_pidfile "/opt/All-protocol-proxy/cf_main.pid"
                 rm -f /opt/All-protocol-proxy/argo_main.log
                 show_progress 75 "Argo 获取超时，正在自动切换 QUIC 重连建立隧道..."
-                /opt/All-protocol-proxy/cloudflared-linux tunnel --url "http://127.0.0.1:${port_argo_entry}" --no-autoupdate --edge-ip-version "$ips" --protocol quic > /opt/All-protocol-proxy/argo_main.log 2>&1 &
+                /opt/All-protocol-proxy/cloudflared-linux --no-autoupdate tunnel --url "http://127.0.0.1:${port_argo_entry}" --protocol quic > /opt/All-protocol-proxy/argo_main.log 2>&1 &
                 echo $! > /opt/All-protocol-proxy/cf_main.pid
                 sleep 2
             else
