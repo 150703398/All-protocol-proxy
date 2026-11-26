@@ -940,8 +940,8 @@ proxies:
 EOF
 
     local proxy_names=()
-    local opt_domains=("cf.090227.xyz" "cloudflare.182682.xyz")
-    local opt_labels=("优选cf.090227" "优选182682")
+    local opt_domains=("cf.877774.xyz")
+    local opt_labels=("优选cf.877774")
 
     local argo_domains=("$argo_domain" "${opt_domains[@]}")
     local argo_labels=("默认Argo" "${opt_labels[@]}")
