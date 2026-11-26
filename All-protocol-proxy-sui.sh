@@ -83,6 +83,7 @@ done
 # ========================= 卸载 =========================
 do_uninstall() {
     log_step "开始卸载"
+    command -v s-ui >/dev/null 2>&1 && s-ui stop 2>/dev/null || true
     [ -x "$SUI_DIR/s-ui" ] && "$SUI_DIR/s-ui" stop 2>/dev/null || true
     systemctl disable --now s-ui 2>/dev/null || true
     systemctl disable --now sing-box 2>/dev/null || true
@@ -216,40 +217,65 @@ resolve_latest_sui_version() {
 
 install_sui() {
     log_step "安装 S-UI 面板"
-    if [ -f "$SUI_DIR/s-ui" ]; then
-        log_warn "S-UI 已安装, 跳过安装步骤"
-        return
+
+    # 已安装检测: 命令可用 或 控制脚本存在 -> 视为已装好, 跳过安装继续后续配置
+    # (你这次面板其实已装好在跑, 但旧脚本只认单一旧版路径, 误判成失败)
+    if command -v s-ui >/dev/null 2>&1 || [ -x "$SUI_DIR/s-ui" ]; then
+        log_info "检测到 S-UI 已安装, 跳过安装步骤, 继续配置"
+        return 0
     fi
 
     log_info "下载 S-UI 安装器..."
     curl -fsSL -o /tmp/sui-install.sh \
         https://raw.githubusercontent.com/alireza0/s-ui/master/install.sh
 
-    # 版本号优先级: 命令行参数 --sui-version > GitHub API 解析 > 安装器自行探测
+    # 版本号优先级: --sui-version > GitHub API 解析 > 安装器自行探测
     if [ -z "$SUI_VERSION" ]; then
         SUI_VERSION=$(resolve_latest_sui_version || true)
     fi
 
-    if [ -n "$SUI_VERSION" ]; then
-        log_info "安装 S-UI 版本: ${SUI_VERSION}"
-        bash /tmp/sui-install.sh "${SUI_VERSION}" || {
+    # 非交互安装: 安装器会用两个 [y/n] 问"是否改面板设置 / 是否改管理员凭据",
+    # 统一回 n —— 保持默认端口与默认账号, 面板参数与凭据由脚本后续用命令写入。
+    # 这样 sudo / 无人值守下不会卡在交互提示, 也不会因 EOF 让 install.sh 行为异常。
+    local ver_args=""
+    [ -n "$SUI_VERSION" ] && ver_args="$SUI_VERSION"
+
+    local ok=0
+    if [ -n "$ver_args" ]; then
+        log_info "安装 S-UI 版本: ${SUI_VERSION} (非交互)"
+        printf 'n\nn\n' | bash /tmp/sui-install.sh "$ver_args" && ok=1
+        if [ "$ok" -ne 1 ]; then
             log_warn "指定版本 ${SUI_VERSION} 安装失败, 改用自动探测模式重试..."
-            bash /tmp/sui-install.sh
-        }
+            printf 'n\nn\n' | bash /tmp/sui-install.sh && ok=1
+        fi
     else
-        log_warn "未解析到最新版本号(GitHub API 不可达), 交由安装器自动探测..."
-        bash /tmp/sui-install.sh
+        log_warn "未解析到版本号(GitHub API 不可达), 交由安装器自动探测(非交互)..."
+        printf 'n\nn\n' | bash /tmp/sui-install.sh && ok=1
     fi
 
-    if [ ! -f "$SUI_DIR/s-ui" ]; then
-        log_error "S-UI 安装失败。常见原因与处置:"
-        log_error "  1) 机器访问 GitHub API / Releases 受限 -> 用 --sui-version 1.9.0 指定确切版本"
-        log_error "  2) 该版本无 arm64 资产 -> 到项目 Releases 页确认资产名后换版本号重试"
-        log_error "  3) 之前装过一半 -> 先执行 sudo bash $0 uninstall 再重装"
-        exit 1
+    # 安装后验证(放宽): s-ui 命令可用 / 控制脚本存在 / systemd 服务在跑, 任一成立即成功。
+    # v1.6.x 起二进制布局与旧版不同, 单一路径判断会把成功误报成失败。
+    sleep 2
+    if command -v s-ui >/dev/null 2>&1 || [ -x "$SUI_DIR/s-ui" ] || systemctl is-active --quiet s-ui 2>/dev/null; then
+        ln -sf "$SUI_DIR/s-ui" /usr/local/bin/s-ui 2>/dev/null || true
+        log_info "S-UI 安装完成"
+        return 0
     fi
-    ln -sf "$SUI_DIR/s-ui" /usr/local/bin/s-ui 2>/dev/null || true
-    log_info "S-UI 安装完成"
+
+    log_error "S-UI 安装失败(s-ui 命令 / 控制脚本 / systemd 服务 均不存在)。处置:"
+    log_error "  1) 机器访问 GitHub Releases 受限 -> 用 --sui-version <确切版本> 重试"
+    log_error "  2) 该版本无 ${ARCH} 资产 -> 到项目 Releases 页确认资产名后换版本号"
+    log_error "  3) 之前装了一半 -> 先 sudo bash $0 uninstall 再重装"
+    exit 1
+}
+
+# 统一的 s-ui 命令入口: 优先 PATH 中的 s-ui, 回退到安装目录脚本
+run_sui() {
+    if command -v s-ui >/dev/null 2>&1; then
+        s-ui "$@"
+    elif [ -x "$SUI_DIR/s-ui" ]; then
+        "$SUI_DIR/s-ui" "$@"
+    fi
 }
 
 # ========================= 工具函数 =========================
@@ -321,14 +347,15 @@ configure_sui_and_nodes() {
 }
 EOF
 
-    # 配置面板参数并重启
-    "$SUI_DIR/s-ui" setting -port "$PANEL_PORT" >/dev/null 2>&1 || true
-    "$SUI_DIR/s-ui" setting -webBasePath "$PANEL_PATH" >/dev/null 2>&1 || true
-    "$SUI_DIR/s-ui" setting -subPort "$SUB_PORT" >/dev/null 2>&1 || true
-    "$SUI_DIR/s-ui" setting -subBasePath "$SUB_PATH" >/dev/null 2>&1 || true
+    # 配置面板参数, 并非交互写入管理员账号密码(与脚本末尾打印的凭据一致)
+    run_sui setting -port "$PANEL_PORT"        >/dev/null 2>&1 || true
+    run_sui setting -webBasePath "$PANEL_PATH" >/dev/null 2>&1 || true
+    run_sui setting -subPort "$SUB_PORT"       >/dev/null 2>&1 || true
+    run_sui setting -subBasePath "$SUB_PATH"   >/dev/null 2>&1 || true
+    run_sui admin -username "$PANEL_USER" -password "$PANEL_PASS" >/dev/null 2>&1 || true
     echo "$SUB_PORT" > "$SUB_PORT_FILE"
 
-    "$SUI_DIR/s-ui" restart >/dev/null 2>&1 || true
+    run_sui restart >/dev/null 2>&1 || true
     sleep 3
 
     # 保存节点信息
